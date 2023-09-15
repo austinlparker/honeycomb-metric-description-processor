@@ -1,3 +1,5 @@
 collector-config.yaml
 .DS_Store
 otelcol-mdp/
+otelcol-dev/
+k8s.yaml

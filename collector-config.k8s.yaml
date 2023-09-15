@@ -1,0 +1,27 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+  k8s_cluster:
+    auth_type: serviceAccount
+    
+processors:
+  metricdescription:
+    api_key:
+    dataset:
+
+exporters:
+  logging:
+  otlp:
+
+service:
+  pipelines:
+    metrics:
+      receivers:
+      - hostmetrics
+      processors:
+      - metricdescription
+      exporters:
+      - logging
+      - otlp

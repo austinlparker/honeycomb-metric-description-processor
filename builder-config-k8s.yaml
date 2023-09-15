@@ -1,16 +1,15 @@
 dist:
-  name: otelcol
+  name: otelcol-custom
   description: test collector for metric description processor
-  output_path: ./otelcol
+  output_path: /tmp/dist
   otelcol_version: 0.85.0
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.85.0
-  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/hostmetricsreceiver v0.85.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/k8sclusterreceiver v0.85.0
 exporters:
   - gomod: go.opentelemetry.io/collector/exporter/loggingexporter v0.85.0
   - gomod: go.opentelemetry.io/collector/exporter/otlpexporter v0.85.0
-  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.85.0
 processors:
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor v0.85.0
   - gomod: github.com/austinlparker/honeycomb-metric-description-processor v0.85.0
