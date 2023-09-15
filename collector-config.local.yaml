@@ -1,0 +1,31 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+  hostmetrics:
+    scrapers:
+      filesystem:
+      memory:
+      network:
+      process:
+
+processors:
+  metricdescription:
+    api_key:
+    dataset:
+
+exporters:
+  logging:
+  otlp:
+
+service:
+  pipelines:
+    metrics:
+      receivers:
+      - hostmetrics
+      processors:
+      - metricdescription
+      exporters:
+      - logging
+      - otlp

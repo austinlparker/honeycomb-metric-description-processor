@@ -13,7 +13,7 @@ var processorCapabilities = consumer.Capabilities{MutatesData: false}
 
 func NewFactory() processor.Factory {
 	return processor.NewFactory(
-		"attributes",
+		"metricdescription",
 		createDefaultConfig,
 		processor.WithMetrics(createMetricsProcessor, component.StabilityLevelBeta))
 }
@@ -28,11 +28,13 @@ func createMetricsProcessor(
 	cfg component.Config,
 	nextConsumer consumer.Metrics,
 ) (processor.Metrics, error) {
+	md := newMetricsDescriptionProcessor(set.Logger, cfg)
+	md.startUpdateLoop()
 	return processorhelper.NewMetricsProcessor(
 		ctx,
 		set,
 		cfg,
 		nextConsumer,
-		newMetricsDescriptionProcessor(set.Logger, cfg).processMetrics,
+		md.processMetrics,
 		processorhelper.WithCapabilities(processorCapabilities))
 }

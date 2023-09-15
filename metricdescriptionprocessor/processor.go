@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -17,19 +18,22 @@ import (
 
 // This struct contains a map that will act as your in-memory lookup table.
 type metricDescriptionProcessor struct {
-	logger      *zap.Logger
-	cfg         *Config
-	lookupTable map[string]string
-	columnCache map[string]string
+	logger        *zap.Logger
+	cfg           *Config
+	lookupTable   map[string]string
+	columnCache   map[string]string
+	refreshNeeded bool
 }
 
 func newMetricsDescriptionProcessor(logger *zap.Logger, config component.Config) *metricDescriptionProcessor {
-	return &metricDescriptionProcessor{
-		logger:      logger,
-		lookupTable: make(map[string]string),
-		columnCache: make(map[string]string),
-		cfg:         config.(*Config),
+	m := &metricDescriptionProcessor{
+		logger:        logger,
+		lookupTable:   make(map[string]string),
+		columnCache:   make(map[string]string),
+		cfg:           config.(*Config),
+		refreshNeeded: true,
 	}
+	return m
 }
 
 func (m *metricDescriptionProcessor) processMetrics(ctx context.Context, md pmetric.Metrics) (pmetric.Metrics, error) {
@@ -43,7 +47,10 @@ func (m *metricDescriptionProcessor) processMetrics(ctx context.Context, md pmet
 			for k := 0; k < metrics.Len(); k++ {
 				metric := metrics.At(k)
 				if metric.Description() != "" {
-					m.lookupTable[metric.Name()] = metric.Description()
+					if desc, ok := m.lookupTable[metric.Name()]; !ok || desc != metric.Description() {
+						m.lookupTable[metric.Name()] = metric.Description()
+						m.refreshNeeded = true
+					}
 				}
 			}
 		}
@@ -52,28 +59,30 @@ func (m *metricDescriptionProcessor) processMetrics(ctx context.Context, md pmet
 }
 
 func (m *metricDescriptionProcessor) startUpdateLoop() {
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				m.doUpdate()
-			}
+		defer ticker.Stop()
+		for range ticker.C {
+			m.doUpdate()
 		}
 	}()
 }
 
 func (m *metricDescriptionProcessor) doUpdate() {
-	for key, description := range m.lookupTable {
-		m.updateColumnKeyMap(key)
-		m.updateDescriptionByKey(key, description)
+	if m.refreshNeeded {
+		for key, description := range m.lookupTable {
+			m.updateColumnKeyMap(key, "")
+			m.updateDescriptionByKey(key, description, "")
+		}
+		m.refreshNeeded = false
 	}
-
 }
 
-func (m *metricDescriptionProcessor) updateColumnKeyMap(key string) {
+func (m *metricDescriptionProcessor) updateColumnKeyMap(key string, endpoint string) {
 	if _, exists := m.columnCache[key]; !exists {
-		endpoint := fmt.Sprintf("https://api.honeycomb.io/1/columns/%s?key_name=%s", m.cfg.Dataset, key)
+		if endpoint == "" {
+			endpoint = fmt.Sprintf("https://api.honeycomb.io/1/columns/%s?key_name=%s", m.cfg.Dataset, key)
+		}
 		client := &http.Client{}
 		req, err := http.NewRequest("GET", endpoint, nil)
 		if err != nil {
@@ -87,7 +96,7 @@ func (m *metricDescriptionProcessor) updateColumnKeyMap(key string) {
 			return
 		}
 		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			m.logger.Error("Error reading response body", zap.Error(err))
 			return
@@ -101,13 +110,19 @@ func (m *metricDescriptionProcessor) updateColumnKeyMap(key string) {
 			}
 		} else if resp.StatusCode == http.StatusNotFound {
 			m.logger.Info("Key did not exist in dataset")
+		} else {
+			m.logger.Info("Unsuccessful", zap.Int("Status Code", resp.StatusCode))
 		}
+
 	}
 }
 
-func (m *metricDescriptionProcessor) updateDescriptionByKey(key string, description string) {
+func (m *metricDescriptionProcessor) updateDescriptionByKey(key string, description string, endpoint string) {
 	cid := m.columnCache[key]
-	endpoint := fmt.Sprintf("https://api.honeycomb.io/1/columns/%s/%s", m.cfg.Dataset, cid)
+	if endpoint == "" {
+		endpoint = fmt.Sprintf("https://api.honeycomb.io/1/columns/%s/%s", m.cfg.Dataset, cid)
+		m.logger.Info(endpoint)
+	}
 	client := &http.Client{}
 	req, err := http.NewRequest("PUT", endpoint, nil)
 	if err != nil {
